@@ -1,12 +1,15 @@
 #! /usr/bin/env hy
 
-                                ; TODO Make narrow board handle boxes
-                                ; Integrate narrow-board into the solving loop
-
+                                ; Test this monster
+                                ; Add more docstrings
 
 (import [hy.extra.anaphoric [x]])
 (import [numpy :as np])
 (import [sudokutools.generate [generate]])
+
+
+(defmacro np-map [function input]
+  `(np.array (list (map ,function ,input))))
 
 (defn product [x y] (* x y))
 (setv primes [2 3 5 7 11 13 17 19 23])
@@ -44,16 +47,6 @@
               (get (dict (zip primes numbers)) x)
               x))))
 
-(defn possibility-product [set]
-  "Returns the product of all the primes not in the set"
-  (setv filtered-set (list (ap-filter (in x primes) set)))
-  (if (any filtered-set)
-      (// prime-product
-          (* (unpack-iterable filtered-set)))
-      prime-product))
-
-
-
 (defn get-boxes [board]
   (np.reshape (np.array (list (map (fn [row] (np.hsplit row 3))
                                     (np.vsplit board 3))))
@@ -62,65 +55,54 @@
 (defn resolve-box [r c]
   (+ (* 3 (// r 3)) (// c 3)))
 
+(defn possibility-product [set]
+  "Returns the product of all the primes not in the set"
+  (setv filtered-set (list (ap-filter (in x primes) set)))
+  (if (any filtered-set)
+      (// prime-product
+          (* (unpack-iterable filtered-set)))
+      prime-product))
+
 (defn shared-prime-factor [set]
+  "Returns the common factor of all the primes in the set"
   (np.gcd.reduce
     (list (ap-reject (in x primes) set))))
 
-(defn possibilities [sets]
-  (np.array (list (map possibility-product sets))))
-
 (defn combination-matrix [board function]
-  {:rows (function board)
-   :columns (function (np.transpose board))
-   :boxes (function (get-boxes board))})
+  "The values of a function applied to each of the rows, columns and boxes of the board"
+  {:rows (np-map function board)
+   :columns (np-map np.transpose board)
+   :boxes (np-map function (get-boxes board))})
 
 (defn get-from-combination [combination-matrix r c]
+  "Return a list of the combination values for the row, column and box to which a square belongs."
   [(get (:rows combination-matrix) r)
    (get (:columns combination-matrix) c)
    (get (:boxes combination-matrix) (resolve-box r c))])
 
-(defn nonprime-processor [board matrix-generator processor-function]
-  (setv matrix (combination-matrix board matrix-generator))
+(defn nonprime-processor [board processor-function]
   (setv board (np.copy board))
   (for [(, r c) (np.ndindex (np.shape board))]
     (if (not (in (get board r c) primes))
-        (setv (get board r c) (processor-function matrix r c))))
+        (setv (get board r c) (processor-function r c))))
   board)
 
 (defn replace-nonprime-with-possibilities [board]
+  (setv possibility-matrix (combination-matrix board possibility-product))
   (nonprime-processor possibilities
-                      (fn [matrix r c]
-                        (np.gcd.reduce (get-from-combination matrix r c)))))
+                      (fn [r c]
+                        (np.gcd.reduce (get-from-combination possibility-product r c)))))
 
-; Not sure if the narrowing algorithm is actually compatible with nonprime-processor
-(defn narrow-board [board]
-  (nonprime-processor shared-prime-factor
-                      (fn [matrix r c]
-                        (setv shared (get-from-combination matrix r c))
-
-    
-
-(defn narrow-set [set]
-  (setv gcp (np.gcd.reduce
-              (list (filter (fn [x]
-                              (not (in x primes)))
-                            set))))
-  (list (ap-map
-               (if (in x primes)
-                   x
-                   (if (in (// x gcp) primes)
-                       (// x gcp)
-                       x))
-             set)))
 
 (defn narrow-board [board]
-  (setv rows-narrowed (np.array (list (map narrow-set board))))
-  (setv columns-narrowed (np.transpose
-                           (np.array
-                             (list
-                               (map narrow-set (np.transpose rows-narrowed))))))
-  (print "In narrow-board: " rows-narrowed " Done ")
-  columns-narrowed)
+  (setv shared-factor-matrix (combination-matrix board shared-prime-factor))
+  (nonprime-processor board
+                      (fn [r c]
+                        (setv shared (get-from-combination shared-factor-matrix r c)
+                              value  (get board r c))
+                        (ap-if (ap-first (// value it) shared)
+                            it
+                            value)))) ; Divide the non-prime value by the first prime factor that makes it prime, else return it.
 
 (defn solver [board]
   (setv previous (np.zeros (np.shape board)))
@@ -129,8 +111,9 @@
     (setv counter (+ 1 counter))
     (print counter)
     (setv previous board)
-    (setv board (narrow-board (replace-nonprime-with-possibilities board))))
-  (if (any (list (ap-reject (in x primes) (.flatten board))))
+    (setv board (replace-nonprime-with-possibilities board))
+    (setv board (narrow-board board)))
+  (if (any (list (ap-reject (in it primes) (.flatten board))))
       (print "Stuck!")
       (print "Solved!"))
   board)
@@ -145,7 +128,6 @@
                              :dtype int
                              :sep " ")
               '(9 9)))
-
 
 (defmain [&rest args]
   (sudoku-solver test2))
