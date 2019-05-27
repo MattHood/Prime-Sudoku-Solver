@@ -109,7 +109,7 @@
                       (fn [r c]
                         (setv shared (get-from-combination shared-factor-matrix r c)
                               value  (get board r c))
-                        (ap-if (ap-first (in (// value it) (ap-reject (= it 1) primes) shared)
+                        (ap-if (ap-first (in (// value it) primes) shared)
                             (// value it)
                             value)))) ; Divide the non-prime value by the first prime factor that makes it prime, else return it.
 
