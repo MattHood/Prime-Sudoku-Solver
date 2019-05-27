@@ -3,15 +3,22 @@
                                 ; Test this monster
                                 ; Add more docstrings
 
-(import [hy.extra.anaphoric [x]])
+(require [hy.extra.anaphoric [*]])
 (import [numpy :as np])
 (import [sudokutools.generate [generate]])
 
 
 (defmacro np-map [function input]
-  `(np.array (list (map ,function ,input))))
+  `(np.array (list (map ~function ~input))))
 
-(defn product [x y] (* x y))
+(defmacro ap-np-map [function input]
+  `(np.array (list (ap-map ~function ~input))))
+
+; TODO Allow docstrings
+(defmacro defvec [name params body]
+  `(defun ~name ~params ~@body)
+  `(setv ~name (np.vectorize ~name)))
+
 (setv primes [2 3 5 7 11 13 17 19 23])
 (setv numbers [1 2 3 4 5 6 7 8 9])
 (setv prime-product (* (unpack-iterable primes)))
@@ -40,6 +47,7 @@
       0
       (get (dict (zip numbers primes)) x)))))
 
+
 (setv map-from-prime
       (np.vectorize
         (fn [x]
@@ -48,8 +56,7 @@
               x))))
 
 (defn get-boxes [board]
-  (np.reshape (np.array (list (map (fn [row] (np.hsplit row 3))
-                                    (np.vsplit board 3))))
+  (np.reshape (np-map (fn [row] (np.hsplit row 3)) (np.vsplit board 3))
               '(9 9)))
 
 (defn resolve-box [r c]
@@ -57,7 +64,7 @@
 
 (defn possibility-product [set]
   "Returns the product of all the primes not in the set"
-  (setv filtered-set (list (ap-filter (in x primes) set)))
+  (setv filtered-set (list (ap-filter (in it primes) set)))
   (if (any filtered-set)
       (// prime-product
           (* (unpack-iterable filtered-set)))
@@ -66,12 +73,12 @@
 (defn shared-prime-factor [set]
   "Returns the common factor of all the primes in the set"
   (np.gcd.reduce
-    (list (ap-reject (in x primes) set))))
+    (list (ap-reject (in it primes) set))))
 
 (defn combination-matrix [board function]
   "The values of a function applied to each of the rows, columns and boxes of the board"
   {:rows (np-map function board)
-   :columns (np-map np.transpose board)
+   :columns (np-map function (np.transpose board))
    :boxes (np-map function (get-boxes board))})
 
 (defn get-from-combination [combination-matrix r c]
@@ -81,27 +88,29 @@
    (get (:boxes combination-matrix) (resolve-box r c))])
 
 (defn nonprime-processor [board processor-function]
+  "Applies a function to every non-prime number in the grid"
   (setv board (np.copy board))
-  (for [(, r c) (np.ndindex (np.shape board))]
+  (setv dimensions  (np.ndindex (np.shape board)))
+  (for [(, r c) dimensions]
     (if (not (in (get board r c) primes))
         (setv (get board r c) (processor-function r c))))
   board)
 
 (defn replace-nonprime-with-possibilities [board]
   (setv possibility-matrix (combination-matrix board possibility-product))
-  (nonprime-processor possibilities
+  (nonprime-processor board
                       (fn [r c]
-                        (np.gcd.reduce (get-from-combination possibility-product r c)))))
+                        (np.gcd.reduce (get-from-combination possibility-matrix r c)))))
 
-
+; Use a possibility matrix to find whether the suggested substitution is a possibility
 (defn narrow-board [board]
   (setv shared-factor-matrix (combination-matrix board shared-prime-factor))
   (nonprime-processor board
                       (fn [r c]
                         (setv shared (get-from-combination shared-factor-matrix r c)
                               value  (get board r c))
-                        (ap-if (ap-first (// value it) shared)
-                            it
+                        (ap-if (ap-first (in (// value it) (ap-reject (= it 1) primes) shared)
+                            (// value it)
                             value)))) ; Divide the non-prime value by the first prime factor that makes it prime, else return it.
 
 (defn solver [board]
