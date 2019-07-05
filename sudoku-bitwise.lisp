@@ -141,27 +141,8 @@
                                   (resolve-box (first child) (second child)))) ; or box.
                        (not (member child exclude)))) ; Not in the exclusion list
 
-(defun cell-tree (cell cell-list &optional (chain '()))
-  (setf chain cell)
-  (labels
-      ((dependent-cell-p (c)
-         (and (not (equal #*000000000 (bit-and (third cell)
-                                               (third c)))) ; Numbers in common.
-              (or (equal (first cell) (first c))            ; In the same row,
-                  (equal (second cell) (second c))          ; column,
-                  (equal (resolve-box (first cell) (second cell))
-                         (resolve-box (first c) (second c)))) ; or box.
-              (not (member c (rest chain))))) ; Not in the chain, sans the head
-       (recurser (new-cell)
-         (list new-cell (mapcar (lambda (new-cell)
-                                  (setf chain (append chain (list new-cell)))
-                                  (if (equal new-cell (car chain))
-                                      (return-from recurser)
-                                      (recurser new-cell)))
-                                (remove-duplicates  (remove-if-not #'dependent-cell-p cell-list))))))
-    (recurser cell)))
-
 (defun adjacency-matrix (cell-list)
+  ; Given the list of incomplete cells, returns a matrix of all "adjacent" cells that fulfil the dependent-cell-p criteria.
   (mapcar (lambda (cell)
             (map 'bit-vector
                  (lambda (counterpart)
@@ -172,6 +153,7 @@
           cell-list))
 
 (defun once-removed (row matrix)
+  ; For the row of the adjacency matrix, returns the row of cells that are one step removed, or "two walks".
   (labels ((mask-column (c) (bit-and row c))
            (remove-only-in-latter (c) (bit-and (bit-not row) c)))
     (reduce #'bit-ior
