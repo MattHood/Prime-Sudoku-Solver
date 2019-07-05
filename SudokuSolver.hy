@@ -1,7 +1,7 @@
 #! /usr/bin/env hy
 
-                                ; Test this monster
-                                ; Add more docstrings
+                                ; Criticisms of Hylang: itertools and lists should have implicit conversion
+; Optional parameters should have default values ffs
 
 (require [hy.extra.anaphoric [*]])
 (import [numpy :as np])
@@ -55,6 +55,16 @@
               (get (dict (zip primes numbers)) x)
               x))))
 
+(defn lister [l]
+  (list (.tolist (np.array l))))
+
+(defn list-product [factors &optional acc]
+  (setv acc (if acc acc 1))
+  (setv factors (lister factors))
+  (if (empty? factors)
+      acc
+      (list-product (list (rest factors)) (* (first factors) acc))))
+
 (defn get-boxes [board]
   (np.reshape (np-map (fn [row] (np.hsplit row 3)) (np.vsplit board 3))
               '(9 9)))
@@ -64,16 +74,30 @@
 
 (defn possibility-product [set]
   "Returns the product of all the primes not in the set"
-  (setv filtered-set (list (ap-filter (in it primes) set)))
+  (setv filtered-set (lister (ap-filter (in it primes) set)))
   (if (any filtered-set)
       (// prime-product
           (* (unpack-iterable filtered-set)))
       prime-product))
 
 (defn shared-prime-factor [set]
-  "Returns the common factor of all the primes in the set"
+  "Returns the common factor, a product of primes, of all the non-primes in the set"
   (np.gcd.reduce
     (list (ap-reject (in it primes) set))))
+
+(defn index-of-factor [factor number &optional [count 0]]
+  "Computes the the repetitions of a factor in a product"
+  (setv result (divmod number factor))
+  (if (zero? (second result))
+      (index-of-factor factor (first result) (inc count))
+      count))
+
+(defn unique-prime-product [set]
+  "Returns the product of all the primes that only occur once in the set"
+  (setv nonprime-product (list-product (ap-reject (in it primes) set)))
+  (list-product
+       (ap-filter (= (index-of-factor it nonprime-product) 1)
+                  primes)))
 
 (defn combination-matrix [board function]
   "The values of a function applied to each of the rows, columns and boxes of the board"
@@ -102,16 +126,26 @@
                       (fn [r c]
                         (np.gcd.reduce (get-from-combination possibility-matrix r c)))))
 
-; Use a possibility matrix to find whether the suggested substitution is a possibility
+; Use a possibility matrix to find whether the suggested substitution is a possibility - or maybe a duplicate matrix?
 (defn narrow-board [board]
-  (setv shared-factor-matrix (combination-matrix board shared-prime-factor))
-  (nonprime-processor board
-                      (fn [r c]
-                        (setv shared (get-from-combination shared-factor-matrix r c)
-                              value  (get board r c))
-                        (ap-if (ap-first (in (// value it) primes) shared)
-                            (// value it)
-                            value)))) ; Divide the non-prime value by the first prime factor that makes it prime, else return it.
+  (setv unique-prime-matrix (combination-matrix board unique-prime-product))
+  (nonprime-processor
+    board
+    (fn [r c]
+      (setv unique-primes (get-from-combination unique-prime-matrix r c)
+            value  (get board r c) 
+            substitutions (list (ap-reject (= it 1)
+                                     (ap-map (np.gcd it value)
+                                             unique-primes))))
+      (print "----------")
+      (print "Row: " r " Column: " c " Value: " value)
+      (print "Unique primes: " unique-primes " Substitutions: " substitutions)
+      (if (empty? substitutions)
+          value
+          (first substitutions))))) ; Subsitutions should contain one unique value at this point. TODO Add a check for this also somehow getting ones
+
+
+      
 
 (defn solver [board]
   (setv previous (np.zeros (np.shape board)))
